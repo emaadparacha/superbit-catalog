@@ -16,6 +16,8 @@ def connect_duckdb():
 
 con = connect_duckdb()
 
+st.info(f"Connected to: {PARQUET_URL}")
+
 # Get list of unique SOURCE_NAMEs
 @st.cache_data
 def get_unique_sources():
