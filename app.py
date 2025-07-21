@@ -31,7 +31,7 @@ def get_unique_sources():
     return df_sources['SOURCE_NAME'].tolist()
 
 unique_sources = get_unique_sources()
-selected_source = st.selectbox("Select a SOURCE_NAME target (optional):", [""] + unique_sources)
+selected_source = st.selectbox("Select a SOURCE_NAME target:", [""] + unique_sources)
 
 if selected_source:
     st.write(f"Showing first 10 rows for target: {selected_source}")
@@ -41,22 +41,12 @@ if selected_source:
     WHERE SOURCE_NAME = '{selected_source}'
     LIMIT 10
     """
-else:
-    st.write("No target selected. Showing first row of each of first 10 unique targets.")
-    query = f"""
-    SELECT *
-    FROM read_parquet('{PARQUET_URL}')
-    WHERE SOURCE_NAME IS NOT NULL
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY SOURCE_NAME ORDER BY ALPHA_SKY) = 1
-    LIMIT 10
-    """
+    df_target = con.execute(query).fetchdf()
+    st.dataframe(df_target, use_container_width=True, height=500)
 
-df_default = con.execute(query).fetchdf()
-st.dataframe(df_default, use_container_width=True, height=500)
-
-# Download button (CSV only)
-csv_data = df_default.to_csv(index=False).encode('utf-8')
-st.download_button("Download table as CSV", csv_data, file_name="default_view.csv", mime='text/csv')
+    # Download button (CSV only)
+    csv_data = df_target.to_csv(index=False).encode('utf-8')
+    st.download_button("Download table as CSV", csv_data, file_name="target_view.csv", mime='text/csv')
 
 st.markdown("---")
 
