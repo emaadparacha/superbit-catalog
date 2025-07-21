@@ -11,7 +11,7 @@ PARQUET_URL = 'http://hen.astro.utoronto.ca/data/combined_sources.parquet'
 @st.cache_resource
 def connect_duckdb():
     con = duckdb.connect()
-    con.execute("INSTALL httpfs; LOAD httpfs;")  # Enable reading from HTTP
+    con.execute("INSTALL httpfs; LOAD httpfs;")
     return con
 
 con = connect_duckdb()
@@ -32,21 +32,21 @@ unique_sources = get_unique_sources()
 selected_source = st.selectbox("Select a SOURCE_NAME target (optional):", [""] + unique_sources)
 
 if selected_source:
-    st.write(f"Showing first 100 rows for target: {selected_source}")
+    st.write(f"Showing first 10 rows for target: {selected_source}")
     query = f"""
     SELECT *
     FROM read_parquet('{PARQUET_URL}')
     WHERE SOURCE_NAME = '{selected_source}'
-    LIMIT 100
+    LIMIT 10
     """
 else:
-    st.write("No target selected. Showing one row per unique target (default limit 150).")
+    st.write("No target selected. Showing first row of each of first 10 unique targets.")
     query = f"""
     SELECT *
     FROM read_parquet('{PARQUET_URL}')
     WHERE SOURCE_NAME IS NOT NULL
     QUALIFY ROW_NUMBER() OVER (PARTITION BY SOURCE_NAME ORDER BY ALPHA_SKY) = 1
-    LIMIT 150
+    LIMIT 10
     """
 
 df_default = con.execute(query).fetchdf()
@@ -60,7 +60,7 @@ st.markdown("---")
 
 st.subheader("Custom SQL Query (default limit 150)")
 
-st.write("Note: To query the dataset, you must use:")
+st.write("Note: To query the dataset, you must use this format:")
 st.code(f"FROM read_parquet('{PARQUET_URL}')", language='sql')
 
 default_sql = f"""
