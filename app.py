@@ -1,9 +1,10 @@
 import streamlit as st
 import duckdb
+import pandas as pd
 
-st.set_page_config(page_title="Combined Sources SQL Explorer", layout="wide")
+st.set_page_config(page_title="Combined Sources Explorer", layout="wide")
 
-st.title("Combined Sources SQL Explorer")
+st.title("Combined Sources Explorer")
 
 PARQUET_URL = 'http://hen.astro.utoronto.ca/data/combined_sources.parquet'
 
@@ -15,36 +16,69 @@ def connect_duckdb():
 
 con = connect_duckdb()
 
-st.info(f"Connected to: `{PARQUET_URL}`")
+# Get list of unique SOURCE_NAMEs
+@st.cache_data
+def get_unique_sources():
+    query = f"""
+    SELECT DISTINCT SOURCE_NAME
+    FROM read_parquet('{PARQUET_URL}')
+    WHERE SOURCE_NAME IS NOT NULL
+    ORDER BY SOURCE_NAME
+    """
+    df_sources = con.execute(query).fetchdf()
+    return df_sources['SOURCE_NAME'].tolist()
 
-# Default query
-default_query = f"""
+unique_sources = get_unique_sources()
+selected_source = st.selectbox("Select a SOURCE_NAME target (optional):", [""] + unique_sources)
+
+if selected_source:
+    st.write(f"Showing first 100 rows for target: {selected_source}")
+    query = f"""
+    SELECT *
+    FROM read_parquet('{PARQUET_URL}')
+    WHERE SOURCE_NAME = '{selected_source}'
+    LIMIT 100
+    """
+else:
+    st.write("No target selected. Showing one row per unique target (default limit 150).")
+    query = f"""
+    SELECT *
+    FROM read_parquet('{PARQUET_URL}')
+    WHERE SOURCE_NAME IS NOT NULL
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY SOURCE_NAME ORDER BY ALPHA_SKY) = 1
+    LIMIT 150
+    """
+
+df_default = con.execute(query).fetchdf()
+st.dataframe(df_default, use_container_width=True, height=500)
+
+# Download button (CSV only)
+csv_data = df_default.to_csv(index=False).encode('utf-8')
+st.download_button("Download table as CSV", csv_data, file_name="default_view.csv", mime='text/csv')
+
+st.markdown("---")
+
+st.subheader("Custom SQL Query (default limit 150)")
+
+st.write("Note: To query the dataset, you must use:")
+st.code(f"FROM read_parquet('{PARQUET_URL}')", language='sql')
+
+default_sql = f"""
 SELECT *
 FROM read_parquet('{PARQUET_URL}')
-LIMIT 100
+LIMIT 150
 """
 
-query = st.text_area("✏️ Enter your SQL query:", value=default_query, height=200)
+user_query = st.text_area("Enter your SQL query below:", value=default_sql, height=200)
 
-if st.button("Run Query"):
+if st.button("Run SQL Query"):
     try:
-        df = con.execute(query).fetchdf()
-        st.success(f"Query ran successfully. {len(df)} rows returned.")
-        st.dataframe(df, use_container_width=True)
+        df_query = con.execute(user_query).fetchdf()
+        st.success(f"Query ran successfully. Showing {len(df_query)} rows.")
+        st.dataframe(df_query, use_container_width=True, height=500)
 
-        # Download buttons
-        csv_data = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv_data, file_name="query_result.csv", mime='text/csv')
-
-        parquet_data = df.to_parquet(index=False)
-        st.download_button("Download Parquet", parquet_data, file_name="query_result.parquet", mime='application/octet-stream')
+        csv_query_data = df_query.to_csv(index=False).encode('utf-8')
+        st.download_button("Download query result as CSV", csv_query_data, file_name="query_result.csv", mime='text/csv')
 
     except Exception as e:
         st.error(f"Query failed: {e}")
-
-st.markdown("""
-**Examples you can try:**
-- `SELECT COUNT(*) FROM read_parquet('...')`
-- `SELECT SOURCE_NAME, COUNT(*) AS count FROM read_parquet('...') GROUP BY SOURCE_NAME ORDER BY count DESC LIMIT 10`
-- `SELECT * FROM read_parquet('...') WHERE MAG_AUTO < 20 LIMIT 50`
-""")
