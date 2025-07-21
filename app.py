@@ -4,7 +4,7 @@ import pandas as pd
 
 st.set_page_config(page_title="Combined Sources Explorer", layout="wide")
 
-st.title("SuperBIT Sources Explorer")
+st.title("SuperBIT Targets and Sources Explorer 🔭")
 
 PARQUET_URL = 'http://hen.astro.utoronto.ca/data/combined_sources.parquet'
 
