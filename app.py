@@ -1,40 +1,50 @@
 import streamlit as st
-import pandas as pd
+import duckdb
 
-st.set_page_config(page_title="Combined Sources Viewer", layout="wide")
+st.set_page_config(page_title="Combined Sources SQL Explorer", layout="wide")
 
-st.title("Combined Sources Viewer")
+st.title("Combined Sources SQL Explorer")
 
-# Load data from public URL
-@st.cache_data
-def load_data():
-    url = 'http://hen.astro.utoronto.ca/data/combined_sources.parquet'
-    df = pd.read_parquet(url)
-    return df
+PARQUET_URL = 'http://hen.astro.utoronto.ca/data/combined_sources.parquet'
 
-# Load data
-df = load_data()
-st.write(f"Loaded {df.shape[0]:,} rows and {df.shape[1]} columns.")
+@st.cache_resource
+def connect_duckdb():
+    con = duckdb.connect()
+    con.execute("INSTALL httpfs; LOAD httpfs;")  # Enable reading from HTTP
+    return con
 
-# Sidebar filters
-st.sidebar.header("Filter Data")
-unique_sources = df['SOURCE_NAME'].dropna().unique()
-selected_sources = st.sidebar.multiselect("Select SOURCE_NAME(s)", sorted(unique_sources))
+con = connect_duckdb()
 
-filtered_df = df
-if selected_sources:
-    filtered_df = df[df['SOURCE_NAME'].isin(selected_sources)]
+st.info(f"Connected to: `{PARQUET_URL}`")
 
-# Show filtered DataFrame
-st.subheader("Data Preview")
-st.dataframe(filtered_df, use_container_width=True, height=500)
+# Default query
+default_query = f"""
+SELECT *
+FROM read_parquet('{PARQUET_URL}')
+LIMIT 100
+"""
 
-# Download buttons
-st.subheader("Download Data")
-csv_data = filtered_df.to_csv(index=False).encode('utf-8')
-st.download_button("Download as CSV", csv_data, file_name="filtered_data.csv", mime='text/csv')
+query = st.text_area("✏️ Enter your SQL query:", value=default_query, height=200)
 
-parquet_data = filtered_df.to_parquet(index=False)
-st.download_button("Download as Parquet", parquet_data, file_name="filtered_data.parquet", mime='application/octet-stream')
+if st.button("Run Query"):
+    try:
+        df = con.execute(query).fetchdf()
+        st.success(f"Query ran successfully. {len(df)} rows returned.")
+        st.dataframe(df, use_container_width=True)
 
-st.info("Use the sidebar to filter data. You can download the filtered results above.")
+        # Download buttons
+        csv_data = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv_data, file_name="query_result.csv", mime='text/csv')
+
+        parquet_data = df.to_parquet(index=False)
+        st.download_button("Download Parquet", parquet_data, file_name="query_result.parquet", mime='application/octet-stream')
+
+    except Exception as e:
+        st.error(f"Query failed: {e}")
+
+st.markdown("""
+**Examples you can try:**
+- `SELECT COUNT(*) FROM read_parquet('...')`
+- `SELECT SOURCE_NAME, COUNT(*) AS count FROM read_parquet('...') GROUP BY SOURCE_NAME ORDER BY count DESC LIMIT 10`
+- `SELECT * FROM read_parquet('...') WHERE MAG_AUTO < 20 LIMIT 50`
+""")
